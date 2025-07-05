@@ -29,7 +29,7 @@ def get_company_info_and_questions(company_name: str):
     if company_questions.empty:
         questions = []
     else:
-        questions = company_questions['Question'].tolist()[:limit]
+        questions = company_questions['Question'].tolist()
 
     return {
         "Company Details": company_details,
