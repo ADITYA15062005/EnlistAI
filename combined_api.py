@@ -13,7 +13,7 @@ def list_all_companies():
 
 
 @app.get("/company-info/{company_name}")
-def get_company_info_and_questions(company_name: str, limit: int = 10):
+def get_company_info_and_questions(company_name: str):
     company = company_data[company_data['Company'].str.lower() == company_name.lower()]
     if company.empty:
         raise HTTPException(status_code=404, detail="Company not found in company data")
