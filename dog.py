@@ -1,93 +1,115 @@
 import os
 import zipfile
-import torch
 import requests
+import torch
 import streamlit as st
 from dotenv import load_dotenv
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
-from langchain.vectorstores import FAISS
-from langchain.embeddings import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
+from langchain.prompts import PromptTemplate
+from langchain_community.vectorstores import FAISS
+from langchain.embeddings import HuggingFaceEmbeddings
 
-# === Setup ===
-os.environ["STREAMLIT_DISABLE_WATCHDOG_WARNINGS"] = "true"
-os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
-
-# Load .env
+# === 🔒 Load environment variables ===
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# === Unzip FAISS Index ===
-zip_path = "faiss_index_company_details.zip"
-extract_folder = "faiss_index_company_details"
+# === 🎯 Streamlit UI setup ===
+st.set_page_config(page_title="EnlistAI - Interview Prep", page_icon="🎯")
+st.title("🎯 EnlistAI – Company Insights & Interview Prep")
+st.markdown("---")
 
-if not os.path.exists(extract_folder):
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_folder)
-
-# === Embedding ===
+# === 🧠 Load embedding model ===
 device = "cuda" if torch.cuda.is_available() else "cpu"
 embedder = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2",
     model_kwargs={"device": device}
 )
+st.success("🔎 Embedding model loaded")
 
-# === Load FAISS ===
-db = FAISS.load_local(
-    folder_path=extract_folder,
-    embeddings=embedder,
-    allow_dangerous_deserialization=True
-)
-retriever = db.as_retriever(search_kwargs={"k": 3})
+# === 📦 Unzip FAISS index ===
+zip_path = "faiss_index_interview_questions.zip"
+extract_folder = "faiss_index_interview_questions"
 
-# === LLM ===
-llm = ChatGroq(api_key=GROQ_API_KEY, model="llama3-70b-8192")
-
-# === Prompt ===
-prompt = PromptTemplate(
-    input_variables=["context", "question"],
-    template="""
-You are a helpful assistant for company interview preparation.
-Based on the following context and company details, answer the question clearly.
-
-{context}
-
-Question: {question}
-Answer:
-"""
-)
-
-# === QA Chain ===
-rag_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=retriever,
-    chain_type="stuff",
-    chain_type_kwargs={"prompt": prompt}
-)
-
-# === Streamlit UI ===
-st.title("EnlistAI – Company Insights & Interview Prep")
-
-company_name = st.text_input("Enter Company Name")
-question = st.text_input("Optional: Custom instruction for the AI (leave blank to use defaults)")
-
-if company_name:
+if not os.path.exists(extract_folder):
     try:
-        # 🔍 Fetch API Data
-        details_url = f"https://enlistai.onrender.com/company/{company_name}"
-        q_url = f"https://enlistai-interview-question.onrender.com/questions/{company_name}"
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_folder)
+        st.success("🗂️ FAISS index unzipped successfully")
+    except Exception as e:
+        st.error(f"❌ Failed to unzip FAISS index: {e}")
 
-        company_data = requests.get(details_url).json()
-        questions_data = requests.get(q_url).json()
+# === 📁 Load FAISS index ===
+try:
+    db = FAISS.load_local(
+        folder_path=extract_folder,
+        embeddings=embedder,
+        allow_dangerous_deserialization=True
+    )
+    retriever = db.as_retriever(search_kwargs={"k": 3})
+    st.success("📁 FAISS index loaded")
+except Exception as e:
+    st.error(f"❌ Failed to load FAISS index: {e}")
 
-        context = f"Company Details:\n{company_data}\n\nInterview Questions:\n{questions_data.get('Questions', [])}"
+# === 🤖 Connect to Groq LLM ===
+llm = ChatGroq(api_key=GROQ_API_KEY, model="llama3-70b-8192")
+st.success("🤖 Groq LLM connected")
 
-        # 🧠 RAG response
-        user_query = question if question else "Give an overview of this company and its interview questions."
-        answer = rag_chain.run({"context": context, "question": user_query})
+# === 🧾 Prompt template ===
+template = """
+You are a company insights assistant.
 
-        st.write(answer)
+Here is what we know:
+
+Company Details:
+{company_info}
+
+Interview Questions:
+{interview_questions}
+
+Now, answer this user question clearly and professionally:
+{user_question}
+"""
+prompt = PromptTemplate(
+    input_variables=["company_info", "interview_questions", "user_question"],
+    template=template
+)
+
+# === ⛓️ Chain: prompt | llm ===
+chain = prompt | llm
+
+# === 🏢 UI Inputs ===
+company_name = st.text_input("🏢 Enter Company Name")
+user_question = st.text_input("❓ Ask your question about the company")
+
+# === 🚀 Main Logic ===
+if company_name and user_question:
+    try:
+        # 1️⃣ Get company details
+        info_url = f"https://enlistai.onrender.com/company/{company_name}"
+        info = requests.get(info_url).json()
+        company_info = "\n".join(f"{k}: {v}" for k, v in info.items())
+
+        # 2️⃣ Get interview questions
+        questions_url = f"https://enlistai-interview-question.onrender.com/questions/{company_name}"
+        q_res = requests.get(questions_url).json()
+        if isinstance(q_res, list):
+            interview_questions = "\n".join(q_res)
+        elif isinstance(q_res, dict):
+            interview_questions = "\n".join(q_res.get("Questions", []))
+        else:
+            interview_questions = "No interview questions found."
+
+        # 3️⃣ Run chain
+        with st.spinner("🤖 Thinking..."):
+            answer = chain.invoke({
+                "company_info": company_info,
+                "interview_questions": interview_questions,
+                "user_question": user_question
+            })
+
+        # 4️⃣ Show result
+        st.markdown("### ✅ Answer")
+        st.write(answer.content if hasattr(answer, "content") else answer)
 
     except Exception as e:
         st.error(f"⚠️ Error occurred: {e}")
