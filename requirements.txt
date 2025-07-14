@@ -1,0 +1,23 @@
+requests
+python-dotenv
+streamlit
+fastapi
+uvicorn
+torch
+sentence-transformers
+faiss-cpu
+
+# Langchain Ecosystem
+langchain
+langchain-core
+langchain-community
+langchain-groq
+langserve
+langchainhub
+
+# Additional Tools
+pandas
+numpy
+transformers
+arxiv
+wikipedia
